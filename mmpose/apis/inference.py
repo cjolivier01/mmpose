@@ -334,7 +334,7 @@ def inference_top_down_pose_model(model,
     if isinstance(imgs_or_paths, (list, tuple)):
         use_multi_frames = True
     else:
-        assert isinstance(imgs_or_paths, (str, np.ndarray))
+        assert isinstance(imgs_or_paths, (str, np.ndarray, torch.Tensor))
         use_multi_frames = False
     # get dataset info
     if (dataset_info is None and hasattr(model, 'cfg')
