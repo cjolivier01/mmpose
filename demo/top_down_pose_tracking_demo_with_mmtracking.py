@@ -57,6 +57,11 @@ def main():
         default=False,
         help='whether to show visualizations.')
     parser.add_argument(
+        '--perf',
+        action='store_true',
+        default=False,
+        help="whether this is just a perf run (don't draw any visualizations).")
+    parser.add_argument(
         '--out-video-root',
         default='',
         help='Root of the output video file. '
@@ -196,25 +201,26 @@ def main():
             pose_results = smoother.smooth(pose_results)
 
         # show the results
-        vis_frame = vis_pose_tracking_result(
-            pose_model,
-            cur_frame,
-            pose_results,
-            radius=args.radius,
-            thickness=args.thickness,
-            dataset=dataset,
-            dataset_info=dataset_info,
-            kpt_score_thr=args.kpt_thr,
-            show=False)
+        if not args.perf:
+            vis_frame = vis_pose_tracking_result(
+                pose_model,
+                cur_frame,
+                pose_results,
+                radius=args.radius,
+                thickness=args.thickness,
+                dataset=dataset,
+                dataset_info=dataset_info,
+                kpt_score_thr=args.kpt_thr,
+                show=False)
 
-        if args.show:
-            cv2.imshow('Frame', vis_frame)
+            if args.show:
+                cv2.imshow('Frame', vis_frame)
 
-        if save_out_video:
-            videoWriter.write(vis_frame)
+            if save_out_video:
+                videoWriter.write(vis_frame)
 
-        if args.show and cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+            if args.show and cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 
     if save_out_video:
         videoWriter.release()
