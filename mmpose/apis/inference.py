@@ -251,7 +251,7 @@ def _inference_single_pose_model(model,
             else:
                 data['image_file'] = imgs_or_paths
         else:
-            if isinstance(imgs_or_paths, np.ndarray):
+            if isinstance(imgs_or_paths, (np.ndarray, torch.Tensor)):
                 data['img'] = imgs_or_paths
             else:
                 data['image_file'] = imgs_or_paths
