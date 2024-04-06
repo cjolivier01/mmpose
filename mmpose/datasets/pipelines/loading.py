@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import mmcv
 import numpy as np
+import torch
 
 from ..builder import PIPELINES
 
@@ -79,8 +80,11 @@ class LoadImageFromFile:
             if isinstance(results['img'], (list, tuple)):
                 assert isinstance(results['img'][0], np.ndarray)
             else:
-                assert isinstance(results['img'], np.ndarray)
-            if self.color_type == 'color' and self.channel_order == 'rgb':
+                assert isinstance(results['img'], (np.ndarray, torch.Tensor))
+            if (
+                self.color_type == 'color' and self.channel_order == 'rgb' 
+                and not isinstance(results['img'], torch.Tensor)
+            ):
                 # The original results['img'] is assumed to be image(s) in BGR
                 # order, so we convert the color according to the arguments.
                 if isinstance(results['img'], (list, tuple)):
