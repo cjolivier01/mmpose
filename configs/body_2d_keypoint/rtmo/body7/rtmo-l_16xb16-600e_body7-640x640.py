@@ -49,7 +49,11 @@ param_scheduler = [
 ]
 
 # data
+#input_size = (256, 256)
 input_size = (640, 640)
+#input_size = (1408, 320)
+#input_size = (2816, 1280)
+#input_size = (3200, 2720)
 metafile = 'configs/_base_/datasets/coco.py'
 codec = dict(type='YOLOXPoseAnnotationProcessor', input_size=input_size)
 
@@ -57,12 +61,12 @@ train_pipeline_stage1 = [
     dict(type='LoadImage', backend_args=None),
     dict(
         type='Mosaic',
-        img_scale=(640, 640),
+        img_scale=input_size,
         pad_val=114.0,
         pre_transform=[dict(type='LoadImage', backend_args=None)]),
     dict(
         type='BottomupRandomAffine',
-        input_size=(640, 640),
+        input_size=input_size,
         shift_factor=0.1,
         rotate_factor=10,
         scale_factor=(0.75, 1.0),
@@ -74,7 +78,7 @@ train_pipeline_stage1 = [
     ),
     dict(
         type='YOLOXMixUp',
-        img_scale=(640, 640),
+        img_scale=input_size,
         ratio_range=(0.8, 1.6),
         pad_val=114.0,
         pre_transform=[dict(type='LoadImage', backend_args=None)]),
@@ -88,7 +92,7 @@ train_pipeline_stage2 = [
     dict(type='LoadImage'),
     dict(
         type='BottomupRandomAffine',
-        input_size=(640, 640),
+        input_size=input_size,
         scale_type='long',
         pad_val=(114, 114, 114),
         bbox_keep_corner=False,

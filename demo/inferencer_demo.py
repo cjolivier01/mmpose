@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from argparse import ArgumentParser
 from typing import Dict
+import time
 
 from mmpose.apis.inferencers import MMPoseInferencer, get_model_aliases
 
@@ -214,8 +215,17 @@ def main():
         display_model_aliases(model_alises)
     else:
         inferencer = MMPoseInferencer(**init_args)
+        counter = 0
+        start = time.time()
         for _ in inferencer(**call_args):
-            pass
+            counter += 1
+            if counter % 20 == 0:
+                duration = time.time() - start
+                fps = counter / duration
+                print(f"fps={fps}")
+                counter = 0
+                start = time.time()
+                
 
 
 if __name__ == '__main__':
