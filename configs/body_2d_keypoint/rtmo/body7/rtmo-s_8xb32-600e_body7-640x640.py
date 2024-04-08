@@ -50,6 +50,12 @@ param_scheduler = [
 
 # data
 input_size = (640, 640)
+#input_size = (640, 256)
+#input_size = (1696, 640)
+#input_size = (1408, 320)
+#input_size = (2816, 1056)
+#input_size = (3200, 1184)   # ar=2.67
+
 metafile = 'configs/_base_/datasets/coco.py'
 codec = dict(type='YOLOXPoseAnnotationProcessor', input_size=input_size)
 

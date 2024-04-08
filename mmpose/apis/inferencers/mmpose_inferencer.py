@@ -136,6 +136,7 @@ class MMPoseInferencer(BaseMMPoseInferencer):
         return_datasamples: bool = False,
         batch_size: int = 1,
         out_dir: Optional[str] = None,
+        visualize: bool = True,
         **kwargs,
     ) -> dict:
         """Call the inferencer.
@@ -207,8 +208,12 @@ class MMPoseInferencer(BaseMMPoseInferencer):
                                         if self.show_progress else inputs):
             preds = self.forward(proc_inputs, **forward_kwargs)
 
-            visualization = self.visualize(ori_inputs, preds,
-                                           **visualize_kwargs)
+            if visualize:
+                visualization = self.visualize(ori_inputs, preds,
+                                            **visualize_kwargs)
+            else:
+                visualization = None
+
             results = self.postprocess(
                 preds,
                 visualization,

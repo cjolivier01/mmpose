@@ -217,7 +217,11 @@ def main():
         inferencer = MMPoseInferencer(**init_args)
         counter = 0
         start = time.time()
-        for _ in inferencer(**call_args):
+        #call_args["batch_size"] = 2
+        for _ in inferencer(
+            **call_args, 
+            #visualize=call_args["show"]
+        ):
             counter += 1
             if counter % 20 == 0:
                 duration = time.time() - start
