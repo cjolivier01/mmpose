@@ -93,7 +93,7 @@ train_pipeline_stage2 = [
     dict(
         type='BottomupRandomAffine',
         input_size=input_size,
-        scale_type='long',
+        scale_type='long',  
         pad_val=(114, 114, 114),
         bbox_keep_corner=False,
         clip_border=True,

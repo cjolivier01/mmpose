@@ -220,7 +220,7 @@ def main():
         #call_args["batch_size"] = 2
         for _ in inferencer(
             **call_args, 
-            #visualize=call_args["show"]
+            visualize=call_args["show"],
         ):
             counter += 1
             if counter % 20 == 0:
