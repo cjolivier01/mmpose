@@ -26,6 +26,12 @@ ConfigType = Union[Config, ConfigDict]
 ResType = Union[Dict, List[Dict], InstanceData, List[InstanceData]]
 
 
+def update_model_state(
+    model: ModelType, new_params: Dict[str, torch.Tensor]
+) -> ModelType:
+    pass
+
+
 @INFERENCERS.register_module(name='pose-estimation')
 @INFERENCERS.register_module()
 class Pose2DInferencer(BaseMMPoseInferencer):
@@ -102,6 +108,36 @@ class Pose2DInferencer(BaseMMPoseInferencer):
                 det_cat_ids=det_cat_ids,
                 device=device,
             )
+        elif det_weights:
+            from mmengine.runner.checkpoint import (
+                _load_checkpoint,
+                _load_checkpoint_to_model,
+            )
+
+            checkpoint_base = _load_checkpoint(weights, map_location="cpu")
+            checkpoint = _load_checkpoint(det_weights, map_location="cpu")
+
+            base_state_dict = checkpoint_base["state_dict"]
+            state_dict = checkpoint
+            if "state_dict" in state_dict:
+                state_dict = state_dict["state_dict"]
+
+            new_state_dict = dict()
+            for name, value in state_dict.items():
+                name = name.replace("ema_backbone", "backbone")
+                name = name.replace("_", ".")
+                if not name.startswith("backbone."):
+                    continue
+                new_state_dict[name] = value
+                if name in base_state_dict:
+                    print(f"found: {name}")
+                    checkpoint_base["state_dict"][name] = value
+                else:
+                    print(f"extra: {name}")
+            checkpoint["state_dict"] = new_state_dict
+            # checkpoint_base["state_dict"].update(new_state_dict)
+
+            _load_checkpoint_to_model(self.model, checkpoint_base)
 
         self._video_input = False
 
