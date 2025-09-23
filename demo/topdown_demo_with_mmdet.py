@@ -178,7 +178,8 @@ def main():
 
     # build detector
     detector = init_detector(
-        args.det_config, args.det_checkpoint, device=args.device)
+        args.det_config, args.det_checkpoint, device=args.device, lazy_import=False
+    )
     detector.cfg = adapt_mmdet_pipeline(detector.cfg)
 
     # build pose estimator

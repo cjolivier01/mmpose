@@ -82,21 +82,23 @@ class MpiiDataset(BaseCocoStyleDataset):
 
     METAINFO: dict = dict(from_file='configs/_base_/datasets/mpii.py')
 
-    def __init__(self,
-                 ann_file: str = '',
-                 bbox_file: Optional[str] = None,
-                 headbox_file: Optional[str] = None,
-                 data_mode: str = 'topdown',
-                 metainfo: Optional[dict] = None,
-                 data_root: Optional[str] = None,
-                 data_prefix: dict = dict(img=''),
-                 filter_cfg: Optional[dict] = None,
-                 indices: Optional[Union[int, Sequence[int]]] = None,
-                 serialize_data: bool = True,
-                 pipeline: List[Union[dict, Callable]] = [],
-                 test_mode: bool = False,
-                 lazy_init: bool = False,
-                 max_refetch: int = 1000):
+    def __init__(
+        self,
+        ann_file: str = "",
+        bbox_file: Optional[str] = None,
+        headbox_file: Optional[str] = None,
+        data_mode: str = "topdown",
+        metainfo: Optional[dict] = None,
+        data_root: Optional[str] = None,
+        data_prefix: dict = dict(img=""),
+        filter_cfg: Optional[dict] = None,
+        indices: Optional[Union[int, Sequence[int]]] = None,
+        serialize_data: bool = True,
+        pipeline: List[Union[dict, Callable]] = [],
+        test_mode: bool = False,
+        lazy_init: bool = True,
+        max_refetch: int = 1000,
+    ):
 
         if headbox_file:
             if data_mode != 'topdown':

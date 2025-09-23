@@ -373,22 +373,23 @@ train_dataloader = dict(
     batch_size=256,
     num_workers=10,
     persistent_workers=True,
-    sampler=dict(type='DefaultSampler', shuffle=True),
+    sampler=dict(type="DefaultSampler", shuffle=True),
     dataset=dict(
-        type='CombinedDataset',
-        metainfo=dict(from_file='configs/_base_/datasets/coco.py'),
+        type="CombinedDataset",
+        metainfo=dict(from_file="configs/_base_/datasets/coco.py"),
         datasets=[
-            dataset_coco,
-            dataset_aic,
-            dataset_crowdpose,
-            dataset_mpii,
-            dataset_jhmdb,
-            dataset_halpe,
-            dataset_posetrack,
+            # dataset_coco,
+            # dataset_aic,
+            # dataset_crowdpose,
+            # dataset_mpii,
+            # dataset_jhmdb,
+            # dataset_halpe,
+            # dataset_posetrack,
         ],
         pipeline=train_pipeline,
         test_mode=False,
-    ))
+    ),
+)
 
 # val datasets
 val_coco = dict(
@@ -505,23 +506,24 @@ test_dataloader = dict(
     num_workers=10,
     persistent_workers=True,
     drop_last=False,
-    sampler=dict(type='DefaultSampler', shuffle=False, round_up=False),
+    sampler=dict(type="DefaultSampler", shuffle=False, round_up=False),
     dataset=dict(
-        type='CombinedDataset',
-        metainfo=dict(from_file='configs/_base_/datasets/coco.py'),
+        type="CombinedDataset",
+        metainfo=dict(from_file="configs/_base_/datasets/coco.py"),
         datasets=[
             val_coco,
-            val_aic,
-            val_crowdpose,
-            val_mpii,
-            val_jhmdb,
-            val_halpe,
-            val_ochuman,
-            val_posetrack,
+            # val_aic,
+            # val_crowdpose,
+            # val_mpii,
+            # val_jhmdb,
+            # val_halpe,
+            # val_ochuman,
+            # val_posetrack,
         ],
         pipeline=val_pipeline,
         test_mode=True,
-    ))
+    ),
+)
 
 # hooks
 default_hooks = dict(
