@@ -30,6 +30,10 @@ def image_to_tensor(img: Union[np.ndarray,
 
         img = np.ascontiguousarray(img)
         tensor = torch.from_numpy(img).permute(2, 0, 1).contiguous()
+    elif isinstance(img, torch.Tensor):
+        if len(img.shape) < 3:
+            img = img.unsqueeze(-1)
+        tensor = img.permute(2, 0, 1).contiguous()
     else:
         assert is_seq_of(img, np.ndarray)
         tensor = torch.stack([image_to_tensor(_img) for _img in img])

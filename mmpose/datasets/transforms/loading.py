@@ -1,6 +1,7 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from typing import Optional
 
+import torch
 import numpy as np
 from mmcv.transforms import LoadImageFromFile
 
@@ -54,7 +55,7 @@ class LoadImage(LoadImageFromFile):
                 results = super().transform(results)
             else:
                 img = results['img']
-                assert isinstance(img, np.ndarray)
+                assert isinstance(img, np.ndarray | torch.Tensor)
                 if self.to_float32:
                     img = img.astype(np.float32)
 

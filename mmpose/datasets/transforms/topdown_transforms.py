@@ -6,6 +6,17 @@ import numpy as np
 from mmcv.transforms import BaseTransform
 from mmengine import is_seq_of
 
+# Optional torch/kornia support (added)
+try:  # pragma: no cover
+    import torch
+    from kornia.geometry.transform import (
+        warp_affine as kornia_warp_affine,
+    )  # type: ignore
+
+    _HAS_TORCH = True
+except Exception:  # pragma: no cover
+    _HAS_TORCH = False
+
 from mmpose.registry import TRANSFORMS
 from mmpose.structures.bbox import get_udp_warp_matrix, get_warp_matrix
 
@@ -107,24 +118,126 @@ class TopdownAffine(BaseTransform):
         else:
             warp_mat = get_warp_matrix(center, scale, rot, output_size=(w, h))
 
-        if isinstance(results['img'], list):
-            results['img'] = [
-                cv2.warpAffine(
-                    img, warp_mat, warp_size, flags=cv2.INTER_LINEAR)
-                for img in results['img']
-            ]
+        # --- Torch/Kornia path support (reapplied) ---
+        def _torch_warp_single(img_t, warp_np):
+            if not _HAS_TORCH:
+                raise RuntimeError(
+                    "torch/kornia required for tensor warping (pip install kornia)."
+                )
+
+            # Normalize to BCHW
+            layout = "CHW"
+            if img_t.ndim == 2:  # HW
+                img_bchw = img_t.unsqueeze(0).unsqueeze(0)
+                layout = "HW"
+            elif img_t.ndim == 3:  # CHW or HWC
+                if img_t.shape[-1] <= 4:  # treat as HWC
+                    img_bchw = img_t.permute(2, 0, 1).unsqueeze(0)
+                    layout = "HWC"
+                else:  # CHW
+                    img_bchw = img_t.unsqueeze(0)
+                    layout = "CHW"
+            elif img_t.ndim == 4:  # BCHW or BHWC
+                if img_t.shape[1] in (1, 3, 4):
+                    img_bchw = img_t
+                    layout = "BCHW"
+                else:
+                    img_bchw = img_t.permute(0, 3, 1, 2)
+                    layout = "BHWC"
+            else:
+                raise ValueError(f"Unsupported tensor image ndim={img_t.ndim}")
+
+            device = img_bchw.device
+            orig_dtype = img_bchw.dtype
+            needs_cast = not img_bchw.dtype.is_floating_point
+            img_float = img_bchw.float() if needs_cast else img_bchw
+
+            B = img_float.shape[0]
+            dsize = (int(h), int(w))  # (H,W)
+            M = torch.as_tensor(warp_np, dtype=img_float.dtype, device=device).view(
+                1, 2, 3
+            )
+            if B > 1:
+                M = M.expand(B, -1, -1)
+
+            out = kornia_warp_affine(
+                img_float,
+                M,
+                dsize=dsize,
+                mode="bilinear",
+                padding_mode="zeros",
+                align_corners=False,
+            )
+
+            if needs_cast:
+                try:
+                    info = torch.iinfo(orig_dtype)
+                    out = out.clamp(0, info.max).round().to(orig_dtype)
+                except TypeError:
+                    out = out.to(orig_dtype)
+
+            # Restore layout
+            if layout == "HW":
+                out = out.squeeze(0).squeeze(0)
+            elif layout == "HWC":
+                out = out.squeeze(0).permute(1, 2, 0)
+            elif layout == "CHW":
+                out = out.squeeze(0)
+            elif layout == "BHWC":
+                out = out.permute(0, 2, 3, 1)
+            return out
+
+        imgs = results["img"]
+        if isinstance(imgs, list):
+            if _HAS_TORCH and any(hasattr(x, "ndim") and isinstance(x, type(getattr(torch, "Tensor", torch.tensor([])))) for x in imgs):  # type: ignore
+                results["img"] = [_torch_warp_single(x, warp_mat) for x in imgs]
+            else:
+                results["img"] = [
+                    cv2.warpAffine(img, warp_mat, warp_size, flags=cv2.INTER_LINEAR)
+                    for img in imgs
+                ]
         else:
-            results['img'] = cv2.warpAffine(
-                results['img'], warp_mat, warp_size, flags=cv2.INTER_LINEAR)
+            if (
+                _HAS_TORCH
+                and hasattr(imgs, "ndim")
+                and "torch" in imgs.__class__.__module__
+            ):
+                results["img"] = _torch_warp_single(imgs, warp_mat)
+            else:
+                results["img"] = cv2.warpAffine(
+                    imgs, warp_mat, warp_size, flags=cv2.INTER_LINEAR
+                )
 
         if results.get('keypoints', None) is not None:
-            if results.get('transformed_keypoints', None) is not None:
-                transformed_keypoints = results['transformed_keypoints'].copy()
+            kps = results["keypoints"]
+            existing = results.get("transformed_keypoints")
+            if existing is None:
+                if _HAS_TORCH and "torch" in kps.__class__.__module__:
+                    transformed_keypoints = kps.clone()
+                else:
+                    transformed_keypoints = kps.copy()
             else:
-                transformed_keypoints = results['keypoints'].copy()
-            # Only transform (x, y) coordinates
-            transformed_keypoints[..., :2] = cv2.transform(
-                results['keypoints'][..., :2], warp_mat)
+                transformed_keypoints = (
+                    existing.clone()
+                    if (_HAS_TORCH and "torch" in existing.__class__.__module__)
+                    else existing.copy()
+                )
+
+            if _HAS_TORCH and "torch" in transformed_keypoints.__class__.__module__:
+                pts = transformed_keypoints[..., :2]
+                shape = pts.shape
+                pts2 = pts.reshape(-1, 2)
+                ones = torch.ones(
+                    (pts2.shape[0], 1), dtype=pts2.dtype, device=pts2.device
+                )
+                pts_h = torch.cat([pts2, ones], dim=-1)  # (N,3)
+                M = torch.as_tensor(
+                    warp_mat, dtype=pts2.dtype, device=pts2.device
+                )  # (2,3)
+                pts_warp = (M @ pts_h.t()).t().reshape(shape)
+                transformed_keypoints[..., :2] = pts_warp
+            else:
+                transformed_keypoints[..., :2] = cv2.transform(kps[..., :2], warp_mat)
             results['transformed_keypoints'] = transformed_keypoints
 
         results['input_size'] = (w, h)
