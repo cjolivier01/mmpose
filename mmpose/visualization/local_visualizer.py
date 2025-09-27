@@ -358,9 +358,9 @@ class PoseLocalVisualizer(OpencvBackendVisualizer):
                             kpt_idx_coords,
                             colors=color,
                             font_sizes=self.radius * 3,
-                            vertical_alignments='bottom',
-                            horizontal_alignments='center')
-
+                            vertical_alignments="bottom",
+                            horizontal_alignments="center",
+                        )
         return self.get_image()
 
     def _draw_instances_kpts_openpose(self,
