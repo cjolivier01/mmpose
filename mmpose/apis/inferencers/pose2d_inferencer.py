@@ -156,34 +156,40 @@ class Pose2DInferencer(BaseMMPoseInferencer):
         data_info.update(self.model.dataset_meta)
 
         if self.cfg.data_mode == 'topdown':
-            bboxes = []
-            if self.detector is not None:
-                try:
-                    det_results = self.detector(
-                        input, return_datasamples=True)['predictions']
-                except ValueError:
-                    print_log(
-                        'Support for mmpose and mmdet versions up to 3.1.0 '
-                        'will be discontinued in upcoming releases. To '
-                        'ensure ongoing compatibility, please upgrade to '
-                        'mmdet version 3.2.0 or later.',
-                        logger='current',
-                        level=logging.WARNING)
-                    det_results = self.detector(
-                        input, return_datasample=True)['predictions']
-                pred_instance = det_results[0].pred_instances.cpu().numpy()
-                bboxes = np.concatenate(
-                    (pred_instance.bboxes, pred_instance.scores[:, None]),
-                    axis=1)
+            if not bboxes:
+                bboxes = []
+                if self.detector is not None:
+                    try:
+                        det_results = self.detector(input, return_datasamples=True)[
+                            "predictions"
+                        ]
+                    except ValueError:
+                        print_log(
+                            "Support for mmpose and mmdet versions up to 3.1.0 "
+                            "will be discontinued in upcoming releases. To "
+                            "ensure ongoing compatibility, please upgrade to "
+                            "mmdet version 3.2.0 or later.",
+                            logger="current",
+                            level=logging.WARNING,
+                        )
+                        det_results = self.detector(input, return_datasample=True)[
+                            "predictions"
+                        ]
+                    pred_instance = det_results[0].pred_instances.cpu().numpy()
+                    bboxes = np.concatenate(
+                        (pred_instance.bboxes, pred_instance.scores[:, None]), axis=1
+                    )
 
-                label_mask = np.zeros(len(bboxes), dtype=np.uint8)
-                for cat_id in self.det_cat_ids:
-                    label_mask = np.logical_or(label_mask,
-                                               pred_instance.labels == cat_id)
+                    label_mask = np.zeros(len(bboxes), dtype=np.uint8)
+                    for cat_id in self.det_cat_ids:
+                        label_mask = np.logical_or(
+                            label_mask, pred_instance.labels == cat_id
+                        )
 
-                bboxes = bboxes[np.logical_and(
-                    label_mask, pred_instance.scores > bbox_thr)]
-                bboxes = bboxes[nms(bboxes, nms_thr)]
+                    bboxes = bboxes[
+                        np.logical_and(label_mask, pred_instance.scores > bbox_thr)
+                    ]
+                    bboxes = bboxes[nms(bboxes, nms_thr)]
 
             data_infos = []
             if len(bboxes) > 0:
