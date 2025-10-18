@@ -1,11 +1,31 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from unittest import TestCase
+from unittest import TestCase, skipUnless
 
 import numpy as np
 
-from mmpose.structures.bbox import (bbox_clip_border, bbox_corner2xyxy,
-                                    bbox_xyxy2corner, get_pers_warp_matrix,
-                                    get_warp_matrix)
+try:  # pragma: no cover
+    import torch
+
+    _HAS_TORCH = True
+except Exception:  # pragma: no cover
+    torch = None
+    _HAS_TORCH = False
+
+from mmpose.structures.bbox import (
+    bbox_clip_border,
+    bbox_corner2xyxy,
+    bbox_cs2xywh,
+    bbox_cs2xyxy,
+    bbox_xywh2cs,
+    bbox_xywh2xyxy,
+    bbox_xyxy2corner,
+    bbox_xyxy2cs,
+    bbox_xyxy2xywh,
+    flip_bbox,
+    get_pers_warp_matrix,
+    get_udp_warp_matrix,
+    get_warp_matrix,
+)
 
 
 class TestBBoxClipBorder(TestCase):
@@ -183,3 +203,136 @@ class TestGetWarpMatrix(TestCase):
             center, scale, rot, output_size, fix_aspect_ratio=False)
         expected_matrix = np.array([[4, 0, -300], [0, 10, -900]])
         np.testing.assert_array_almost_equal(warp_matrix, expected_matrix)
+
+
+class TestBBoxTransformsTorch(TestCase):
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_bbox_xyxy2xywh(self):
+        bbox_np = np.array([[0, 0, 10, 20], [5, 6, 15, 16]], dtype=np.float32)
+        expected = bbox_xyxy2xywh(bbox_np.copy())
+        bbox_t = torch.from_numpy(bbox_np)
+        result_t = bbox_xyxy2xywh(bbox_t.clone())
+        self.assertIsInstance(result_t, torch.Tensor)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_bbox_xywh2xyxy(self):
+        bbox_np = np.array([[0, 0, 10, 20], [5, 6, 15, 16]], dtype=np.float32)
+        expected = bbox_xywh2xyxy(bbox_np.copy())
+        bbox_t = torch.from_numpy(bbox_np)
+        result_t = bbox_xywh2xyxy(bbox_t.clone())
+        self.assertIsInstance(result_t, torch.Tensor)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_bbox_xyxy2cs(self):
+        bbox_np = np.array([0, 0, 10, 20], dtype=np.float32)
+        center_np, scale_np = bbox_xyxy2cs(bbox_np.copy())
+        bbox_t = torch.from_numpy(bbox_np)
+        center_t, scale_t = bbox_xyxy2cs(bbox_t.clone())
+        self.assertIsInstance(center_t, torch.Tensor)
+        self.assertIsInstance(scale_t, torch.Tensor)
+        np.testing.assert_allclose(center_t.cpu().numpy(), center_np)
+        np.testing.assert_allclose(scale_t.cpu().numpy(), scale_np)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_bbox_xywh2cs(self):
+        bbox_np = np.array([0, 0, 10, 20], dtype=np.float32)
+        center_np, scale_np = bbox_xywh2cs(bbox_np.copy())
+        bbox_t = torch.from_numpy(bbox_np)
+        center_t, scale_t = bbox_xywh2cs(bbox_t.clone())
+        np.testing.assert_allclose(center_t.cpu().numpy(), center_np)
+        np.testing.assert_allclose(scale_t.cpu().numpy(), scale_np)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_bbox_cs2xyxy(self):
+        center_np = np.array([5, 10], dtype=np.float32)
+        scale_np = np.array([10, 20], dtype=np.float32)
+        expected = bbox_cs2xyxy(center_np, scale_np)
+        center_t = torch.from_numpy(center_np)
+        scale_t = torch.from_numpy(scale_np)
+        result_t = bbox_cs2xyxy(center_t, scale_t)
+        self.assertIsInstance(result_t, torch.Tensor)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_bbox_cs2xywh(self):
+        center_np = np.array([5, 10], dtype=np.float32)
+        scale_np = np.array([10, 20], dtype=np.float32)
+        expected = bbox_cs2xywh(center_np, scale_np)
+        center_t = torch.from_numpy(center_np)
+        scale_t = torch.from_numpy(scale_np)
+        result_t = bbox_cs2xywh(center_t, scale_t)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_bbox_xyxy2corner(self):
+        bbox_np = np.array([0, 0, 10, 20], dtype=np.float32)
+        expected = bbox_xyxy2corner(bbox_np.copy())
+        bbox_t = torch.from_numpy(bbox_np)
+        result_t = bbox_xyxy2corner(bbox_t.clone())
+        self.assertIsInstance(result_t, torch.Tensor)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_bbox_corner2xyxy(self):
+        corners_np = np.array([[0, 0], [0, 20], [10, 0], [10, 20]], dtype=np.float32)
+        expected = bbox_corner2xyxy(corners_np.copy())
+        corners_t = torch.from_numpy(corners_np)
+        result_t = bbox_corner2xyxy(corners_t.clone())
+        self.assertIsInstance(result_t, torch.Tensor)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_bbox_clip_border(self):
+        bbox_np = np.array([[10, 20], [60, 80], [-5, 25], [100, 120]], dtype=np.float32)
+        expected = bbox_clip_border(bbox_np.copy(), (50, 50))
+        bbox_t = torch.from_numpy(bbox_np)
+        result_t = bbox_clip_border(bbox_t, (50, 50))
+        self.assertIsInstance(result_t, torch.Tensor)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_flip_bbox(self):
+        bbox_np = np.array([10, 20, 30, 40], dtype=np.float32)
+        expected = flip_bbox(bbox_np.copy(), (100, 200), bbox_format="xyxy")
+        bbox_t = torch.from_numpy(bbox_np)
+        result_t = flip_bbox(bbox_t.clone(), (100, 200), bbox_format="xyxy")
+        self.assertIsInstance(result_t, torch.Tensor)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_get_udp_warp_matrix(self):
+        center_np = np.array([100, 50], dtype=np.float32)
+        scale_np = np.array([80, 120], dtype=np.float32)
+        expected = get_udp_warp_matrix(center_np, scale_np, 30.0, (200, 300))
+        center_t = torch.from_numpy(center_np)
+        scale_t = torch.from_numpy(scale_np)
+        result_t = get_udp_warp_matrix(center_t, scale_t, 30.0, (200, 300))
+        self.assertIsInstance(result_t, torch.Tensor)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected, atol=5e-5)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_get_warp_matrix(self):
+        center_np = np.array([100, 100], dtype=np.float32)
+        scale_np = np.array([50, 50], dtype=np.float32)
+        expected = get_warp_matrix(center_np, scale_np, 15.0, (200, 200))
+        center_t = torch.from_numpy(center_np)
+        scale_t = torch.from_numpy(scale_np)
+        result_t = get_warp_matrix(center_t, scale_t, 15.0, (200, 200))
+        self.assertIsInstance(result_t, torch.Tensor)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected, atol=5e-5)
+
+    @skipUnless(_HAS_TORCH, "torch is required for tensor tests")
+    def test_get_pers_warp_matrix(self):
+        center_np = np.array([0, 0], dtype=np.float32)
+        translate_np = np.array([10, 20], dtype=np.float32)
+        shear_np = np.array([5.0, -3.0], dtype=np.float32)
+        expected = get_pers_warp_matrix(center_np, translate_np, 1.2, 25.0, shear_np)
+        center_t = torch.from_numpy(center_np)
+        translate_t = torch.from_numpy(translate_np)
+        shear_t = torch.from_numpy(shear_np)
+        result_t = get_pers_warp_matrix(center_t, translate_t, 1.2, 25.0, shear_t)
+        self.assertIsInstance(result_t, torch.Tensor)
+        np.testing.assert_allclose(result_t.cpu().numpy(), expected, atol=1e-5)

@@ -9,9 +9,7 @@ from mmengine import is_seq_of
 # Optional torch/kornia support (added)
 try:  # pragma: no cover
     import torch
-    from kornia.geometry.transform import (
-        warp_affine as kornia_warp_affine,
-    )  # type: ignore
+    import torch.nn.functional as F
 
     _HAS_TORCH = True
 except Exception:  # pragma: no cover
@@ -75,6 +73,15 @@ class TopdownAffine(BaseTransform):
             np.darray: The reshaped bbox scales in (n, 2)
         """
 
+        if _HAS_TORCH and isinstance(bbox_scale, torch.Tensor):
+            aspect = bbox_scale.new_tensor(aspect_ratio)
+            w = bbox_scale[..., 0]
+            h = bbox_scale[..., 1]
+            cond = w > h * aspect
+            new_w = torch.where(cond, w, h * aspect)
+            new_h = torch.where(cond, w / aspect, h)
+            return torch.stack([new_w, new_h], dim=-1)
+
         w, h = np.hsplit(bbox_scale, [1])
         bbox_scale = np.where(w > h * aspect_ratio,
                               np.hstack([w, w / aspect_ratio]),
@@ -112,18 +119,24 @@ class TopdownAffine(BaseTransform):
         else:
             rot = 0.
 
+        def _is_torch_tensor(obj):
+            return _HAS_TORCH and isinstance(obj, torch.Tensor)
+
         if self.use_udp:
             warp_mat = get_udp_warp_matrix(
                 center, scale, rot, output_size=(w, h))
         else:
             warp_mat = get_warp_matrix(center, scale, rot, output_size=(w, h))
 
-        # --- Torch/Kornia path support (reapplied) ---
+        if _is_torch_tensor(warp_mat):
+            warp_mat = warp_mat.to(dtype=torch.float32)
+        else:
+            warp_mat = warp_mat.astype(np.float32, copy=False)
+
+        # --- Torch-specific path support ---
         def _torch_warp_single(img_t, warp_np):
             if not _HAS_TORCH:
-                raise RuntimeError(
-                    "torch/kornia required for tensor warping (pip install kornia)."
-                )
+                raise RuntimeError("torch is required for tensor warping support.")
 
             # Normalize to BCHW
             layout = "CHW"
@@ -152,18 +165,56 @@ class TopdownAffine(BaseTransform):
             needs_cast = not img_bchw.dtype.is_floating_point
             img_float = img_bchw.float() if needs_cast else img_bchw
 
-            B = img_float.shape[0]
+            B, C, h_in, w_in = img_float.shape
             dsize = (int(h), int(w))  # (H,W)
-            M = torch.as_tensor(warp_np, dtype=img_float.dtype, device=device).view(
-                1, 2, 3
-            )
-            if B > 1:
-                M = M.expand(B, -1, -1)
+            H_out, W_out = dsize
 
-            out = kornia_warp_affine(
+            w_in_f = float(max(w_in, 1))
+            h_in_f = float(max(h_in, 1))
+            W_out_f = float(max(W_out, 1))
+            H_out_f = float(max(H_out, 1))
+
+            A_out = torch.tensor(
+                [
+                    [W_out_f / 2.0, 0.0, (W_out_f - 1.0) / 2.0],
+                    [0.0, H_out_f / 2.0, (H_out_f - 1.0) / 2.0],
+                    [0.0, 0.0, 1.0],
+                ],
+                dtype=img_float.dtype,
+                device=device,
+            )
+
+            A_in_inv = torch.tensor(
+                [
+                    [2.0 / w_in_f, 0.0, -(w_in_f - 1.0) / w_in_f],
+                    [0.0, 2.0 / h_in_f, -(h_in_f - 1.0) / h_in_f],
+                    [0.0, 0.0, 1.0],
+                ],
+                dtype=img_float.dtype,
+                device=device,
+            )
+
+            M_cv2 = torch.eye(3, dtype=img_float.dtype, device=device)
+            M_cv2[:2, :] = torch.as_tensor(
+                warp_np, dtype=img_float.dtype, device=device
+            )
+            M_inv = torch.linalg.inv(M_cv2)
+
+            theta = A_in_inv @ M_inv @ A_out
+            theta = theta[:2, :]
+            theta = theta.unsqueeze(0)
+            if B > 1:
+                theta = theta.expand(B, -1, -1)
+
+            grid = F.affine_grid(
+                theta,
+                size=(B, C, H_out, W_out),
+                align_corners=False,
+            )
+
+            out = F.grid_sample(
                 img_float,
-                M,
-                dsize=dsize,
+                grid,
                 mode="bilinear",
                 padding_mode="zeros",
                 align_corners=False,
@@ -189,41 +240,47 @@ class TopdownAffine(BaseTransform):
 
         imgs = results["img"]
         if isinstance(imgs, list):
-            if _HAS_TORCH and any(hasattr(x, "ndim") and isinstance(x, type(getattr(torch, "Tensor", torch.tensor([])))) for x in imgs):  # type: ignore
-                results["img"] = [_torch_warp_single(x, warp_mat) for x in imgs]
-            else:
-                results["img"] = [
-                    cv2.warpAffine(img, warp_mat, warp_size, flags=cv2.INTER_LINEAR)
-                    for img in imgs
-                ]
+            warped_imgs = []
+            for img in imgs:
+                if _is_torch_tensor(img):
+                    warped_imgs.append(_torch_warp_single(img, warp_mat))
+                elif isinstance(img, np.ndarray):
+                    warped_imgs.append(
+                        cv2.warpAffine(img, warp_mat, warp_size, flags=cv2.INTER_LINEAR)
+                    )
+                else:
+                    raise TypeError(
+                        "Unsupported image type in list: "
+                        f"{type(img).__name__}"  # pragma: no cover
+                    )
+            results["img"] = warped_imgs
         else:
-            if (
-                _HAS_TORCH
-                and hasattr(imgs, "ndim")
-                and "torch" in imgs.__class__.__module__
-            ):
+            if _is_torch_tensor(imgs):
                 results["img"] = _torch_warp_single(imgs, warp_mat)
-            else:
+            elif isinstance(imgs, np.ndarray):
                 results["img"] = cv2.warpAffine(
                     imgs, warp_mat, warp_size, flags=cv2.INTER_LINEAR
+                )
+            else:
+                raise TypeError(
+                    "Unsupported image type: "
+                    f"{type(imgs).__name__}"  # pragma: no cover
                 )
 
         if results.get('keypoints', None) is not None:
             kps = results["keypoints"]
             existing = results.get("transformed_keypoints")
             if existing is None:
-                if _HAS_TORCH and "torch" in kps.__class__.__module__:
+                if _is_torch_tensor(kps):
                     transformed_keypoints = kps.clone()
                 else:
                     transformed_keypoints = kps.copy()
             else:
                 transformed_keypoints = (
-                    existing.clone()
-                    if (_HAS_TORCH and "torch" in existing.__class__.__module__)
-                    else existing.copy()
+                    existing.clone() if _is_torch_tensor(existing) else existing.copy()
                 )
 
-            if _HAS_TORCH and "torch" in transformed_keypoints.__class__.__module__:
+            if _is_torch_tensor(transformed_keypoints):
                 pts = transformed_keypoints[..., :2]
                 shape = pts.shape
                 pts2 = pts.reshape(-1, 2)
@@ -237,7 +294,9 @@ class TopdownAffine(BaseTransform):
                 pts_warp = (M @ pts_h.t()).t().reshape(shape)
                 transformed_keypoints[..., :2] = pts_warp
             else:
-                transformed_keypoints[..., :2] = cv2.transform(kps[..., :2], warp_mat)
+                transformed_keypoints[..., :2] = cv2.transform(
+                    kps[..., :2].astype(np.float32, copy=False), warp_mat
+                ).astype(transformed_keypoints.dtype, copy=False)
             results['transformed_keypoints'] = transformed_keypoints
 
         results['input_size'] = (w, h)
