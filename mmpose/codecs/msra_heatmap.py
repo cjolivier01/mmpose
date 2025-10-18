@@ -3,10 +3,20 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+try:  # pragma: no cover
+    import torch
+
+    _HAS_TORCH = True
+except Exception:  # pragma: no cover
+    torch = None  # type: ignore
+    _HAS_TORCH = False
+
 from mmpose.registry import KEYPOINT_CODECS
 from .base import BaseKeypointCodec
-from .utils.gaussian_heatmap import (generate_gaussian_heatmaps,
-                                     generate_unbiased_gaussian_heatmaps)
+from .utils.gaussian_heatmap import (
+    generate_gaussian_heatmaps,
+    generate_unbiased_gaussian_heatmaps,
+)
 from .utils.post_processing import get_heatmap_maximum
 from .utils.refinement import refine_keypoints, refine_keypoints_dark
 
@@ -131,7 +141,13 @@ class MSRAHeatmap(BaseKeypointCodec):
             - scores (np.ndarray): The keypoint scores in shape (N, K). It
                 usually represents the confidence of the keypoint prediction
         """
-        heatmaps = encoded.copy()
+        torch_input = _HAS_TORCH and isinstance(encoded, torch.Tensor)
+        if torch_input:
+            device = encoded.device
+            dtype = encoded.dtype
+            heatmaps = encoded.detach().cpu().numpy().copy()
+        else:
+            heatmaps = np.array(encoded, copy=True)
         K, H, W = heatmaps.shape
 
         keypoints, scores = get_heatmap_maximum(heatmaps)
@@ -149,5 +165,9 @@ class MSRAHeatmap(BaseKeypointCodec):
 
         # Restore the keypoint scale
         keypoints = keypoints * self.scale_factor
+
+        if torch_input:
+            keypoints = torch.from_numpy(keypoints).to(device=device, dtype=dtype)
+            scores = torch.from_numpy(scores).to(device=device, dtype=dtype)
 
         return keypoints, scores

@@ -2,12 +2,58 @@
 from itertools import zip_longest
 from typing import Optional
 
+import numpy as np
 from torch import Tensor
 
 from mmpose.registry import MODELS
-from mmpose.utils.typing import (ConfigType, InstanceList, OptConfigType,
-                                 OptMultiConfig, PixelDataList, SampleList)
+from mmpose.utils.typing import (
+    ConfigType,
+    InstanceList,
+    OptConfigType,
+    OptMultiConfig,
+    PixelDataList,
+    SampleList,
+)
 from .base import BasePoseEstimator
+
+
+def _prepare_meta_tensor(meta, ref: Tensor, num_instances: int) -> Tensor:
+    if isinstance(meta, Tensor):
+        tensor = meta.to(dtype=ref.dtype, device=ref.device)
+    else:
+        tensor = ref.new_tensor(meta)
+
+    if tensor.ndim == 0:
+        tensor = tensor.reshape(1, 1, 1)
+    elif tensor.ndim == 1:
+        tensor = tensor.reshape(1, 1, tensor.shape[0])
+    elif tensor.ndim == 2:
+        tensor = tensor.reshape(tensor.shape[0], 1, tensor.shape[1])
+    else:
+        tensor = tensor.reshape(*tensor.shape[:-1], 1, tensor.shape[-1])
+
+    if tensor.shape[0] not in (1, num_instances):
+        tensor = tensor.reshape(1, *tensor.shape[1:])
+
+    return tensor
+
+
+def _prepare_meta_array(meta, ref, num_instances: int) -> np.ndarray:
+    array = np.asarray(meta, dtype=ref.dtype)
+
+    if array.ndim == 0:
+        array = array.reshape(1, 1, 1)
+    elif array.ndim == 1:
+        array = array.reshape(1, 1, array.shape[0])
+    elif array.ndim == 2:
+        array = array.reshape(array.shape[0], 1, array.shape[1])
+    else:
+        array = array.reshape(*array.shape[:-1], 1, array.shape[-1])
+
+    if array.shape[0] not in (1, num_instances):
+        array = array.reshape(1, *array.shape[1:])
+
+    return array
 
 
 @MODELS.register_module()
@@ -150,13 +196,37 @@ class TopdownPoseEstimator(BasePoseEstimator):
             input_center = data_sample.metainfo['input_center']
             input_scale = data_sample.metainfo['input_scale']
             input_size = data_sample.metainfo['input_size']
-
-            pred_instances.keypoints[..., :2] = \
-                pred_instances.keypoints[..., :2] / input_size * input_scale \
-                + input_center - 0.5 * input_scale
-            if 'keypoints_visible' not in pred_instances:
-                pred_instances.keypoints_visible = \
-                    pred_instances.keypoint_scores
+            keypoints = pred_instances.keypoints
+            if isinstance(keypoints, Tensor):
+                num_instances = keypoints.shape[0] if keypoints.ndim >= 3 else 1
+                center_t = _prepare_meta_tensor(input_center, keypoints,
+                                                num_instances)
+                scale_t = _prepare_meta_tensor(input_scale, keypoints,
+                                               num_instances)
+                size_t = _prepare_meta_tensor(input_size, keypoints,
+                                              num_instances)
+                offset = keypoints.new_tensor(0.5) * scale_t
+                keypoints_xy = keypoints[..., :2]
+                transformed = keypoints_xy / size_t * scale_t + center_t - offset
+                pred_instances.keypoints[..., :2] = transformed
+                if 'keypoints_visible' not in pred_instances:
+                    pred_instances.keypoints_visible = \
+                        pred_instances.keypoint_scores
+            else:
+                keypoints_np = keypoints
+                num_instances = keypoints_np.shape[0] if keypoints_np.ndim >= 3 else 1
+                center_np = _prepare_meta_array(input_center, keypoints_np,
+                                                num_instances)
+                scale_np = _prepare_meta_array(input_scale, keypoints_np,
+                                               num_instances)
+                size_np = _prepare_meta_array(input_size, keypoints_np,
+                                              num_instances)
+                transformed = (keypoints_np[..., :2] / size_np * scale_np +
+                               center_np - 0.5 * scale_np)
+                pred_instances.keypoints[..., :2] = transformed
+                if 'keypoints_visible' not in pred_instances:
+                    pred_instances.keypoints_visible = \
+                        pred_instances.keypoint_scores
 
             if output_keypoint_indices is not None:
                 # select output keypoints with given indices

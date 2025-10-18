@@ -3,8 +3,25 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+try:  # pragma: no cover
+    import torch
+
+    _HAS_TORCH = True
+except Exception:  # pragma: no cover
+    torch = None  # type: ignore
+    _HAS_TORCH = False
+
 from mmpose.codecs.utils import get_heatmap_maximum, get_simcc_maximum
 from .mesh_eval import compute_similarity_transform
+
+
+def _to_numpy(value, copy: bool = False) -> np.ndarray:
+    if _HAS_TORCH and isinstance(value, torch.Tensor):
+        array = value.detach().cpu().numpy()
+        return array.copy() if copy else array
+    if copy:
+        return np.array(value, copy=True)
+    return np.asarray(value)
 
 
 def _calc_distances(preds: np.ndarray, gts: np.ndarray, mask: np.ndarray,
@@ -29,16 +46,22 @@ def _calc_distances(preds: np.ndarray, gts: np.ndarray, mask: np.ndarray,
         np.ndarray[K, N]: The normalized distances. \
             If target keypoints are missing, the distance is -1.
     """
-    N, K, _ = preds.shape
+    preds_np = _to_numpy(preds)
+    gts_np = _to_numpy(gts)
+    mask_np = _to_numpy(mask, copy=True).astype(bool)
+    norm_factor_np = _to_numpy(norm_factor, copy=True)
+
+    N, K, _ = preds_np.shape
     # set mask=0 when norm_factor==0
-    _mask = mask.copy()
-    _mask[np.where((norm_factor == 0).sum(1))[0], :] = False
+    zero_norm = np.where((norm_factor_np == 0).sum(1))[0]
+    if zero_norm.size > 0:
+        mask_np[zero_norm, :] = False
 
     distances = np.full((N, K), -1, dtype=np.float32)
     # handle invalid values
-    norm_factor[np.where(norm_factor <= 0)] = 1e6
-    distances[_mask] = np.linalg.norm(
-        ((preds - gts) / norm_factor[:, None, :])[_mask], axis=-1)
+    norm_factor_np[np.where(norm_factor_np <= 0)] = 1e6
+    normalized = (preds_np - gts_np) / norm_factor_np[:, None, :]
+    distances[mask_np] = np.linalg.norm(normalized[mask_np], axis=-1)
     return distances.T
 
 

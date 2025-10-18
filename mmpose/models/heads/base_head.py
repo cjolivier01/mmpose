@@ -42,8 +42,7 @@ class BaseHead(BaseModule, metaclass=ABCMeta):
              train_cfg: OptConfigType = {}) -> dict:
         """Calculate losses from a batch of inputs and data samples."""
 
-    def decode(self, batch_outputs: Union[Tensor,
-                                          Tuple[Tensor]]) -> InstanceList:
+    def decode(self, batch_outputs: Union[Tensor, Tuple[Tensor]]) -> InstanceList:
         """Decode keypoints from outputs.
 
         Args:

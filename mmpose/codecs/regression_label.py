@@ -4,6 +4,14 @@ from typing import Optional, Tuple
 
 import numpy as np
 
+try:  # pragma: no cover
+    import torch
+
+    _HAS_TORCH = True
+except Exception:  # pragma: no cover
+    torch = None  # type: ignore
+    _HAS_TORCH = False
+
 from mmpose.registry import KEYPOINT_CODECS
 from .base import BaseKeypointCodec
 
@@ -87,22 +95,34 @@ class RegressionLabel(BaseKeypointCodec):
                 It usually represents the confidence of the keypoint prediction
         """
 
-        if encoded.shape[-1] == 2:
-            N, K, _ = encoded.shape
-            normalized_coords = encoded.copy()
+        torch_input = _HAS_TORCH and isinstance(encoded, torch.Tensor)
+        if torch_input:
+            device = encoded.device
+            dtype = encoded.dtype
+            encoded_np = encoded.detach().cpu().numpy()
+        else:
+            encoded_np = np.asarray(encoded)
+
+        if encoded_np.shape[-1] == 2:
+            N, K, _ = encoded_np.shape
+            normalized_coords = encoded_np.copy()
             scores = np.ones((N, K), dtype=np.float32)
-        elif encoded.shape[-1] == 4:
+        elif encoded_np.shape[-1] == 4:
             # split coords and sigma if outputs contain output_sigma
-            normalized_coords = encoded[..., :2].copy()
-            output_sigma = encoded[..., 2:4].copy()
+            normalized_coords = encoded_np[..., :2].copy()
+            output_sigma = encoded_np[..., 2:4].copy()
 
             scores = (1 - output_sigma).mean(axis=-1)
         else:
             raise ValueError(
                 'Keypoint dimension should be 2 or 4 (with sigma), '
-                f'but got {encoded.shape[-1]}')
+                f'but got {encoded_np.shape[-1]}')
 
         w, h = self.input_size
         keypoints = normalized_coords * np.array([w, h])
+
+        if torch_input:
+            keypoints = torch.from_numpy(keypoints).to(device=device, dtype=dtype)
+            scores = torch.from_numpy(scores).to(device=device, dtype=dtype)
 
         return keypoints, scores
