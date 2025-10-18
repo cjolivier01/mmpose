@@ -2,6 +2,7 @@
 from unittest import TestCase
 
 import numpy as np
+import torch
 
 from mmpose.codecs import SimCCLabel  # noqa: F401
 from mmpose.registry import KEYPOINT_CODECS
@@ -116,6 +117,58 @@ class TestSimCCLabel(TestCase):
         self.assertEqual(scores[1].shape, (1, 17), f'Failed case: "{name}"')
         self.assertGreaterEqual(scores[1].min(), 0.0)
         self.assertLessEqual(scores[1].max(), 1.0)
+
+    def test_decode_torch_parity(self):
+        torch.manual_seed(0)
+        rng = np.random.default_rng(0)
+
+        for name, cfg in self.configs:
+            codec = KEYPOINT_CODECS.build(cfg)
+            simcc_x = rng.random((1, 17, int(192 * codec.simcc_split_ratio)), dtype=np.float32)
+            simcc_y = rng.random((1, 17, int(256 * codec.simcc_split_ratio)), dtype=np.float32)
+
+            np_keypoints, np_scores = codec.decode(simcc_x.copy(), simcc_y.copy())
+
+            torch_keypoints, torch_scores = codec.decode(
+                torch.from_numpy(simcc_x.copy()),
+                torch.from_numpy(simcc_y.copy()))
+
+            self.assertIsInstance(torch_keypoints, torch.Tensor)
+            self.assertIsInstance(torch_scores, torch.Tensor)
+            coord_atol = 2e-1 if cfg.get('use_dark', False) else 1e-3
+            self.assertTrue(
+                np.allclose(np_keypoints, torch_keypoints.cpu().numpy(), atol=coord_atol, rtol=1e-4),
+                f'Failed case: "{name}"')
+            self.assertTrue(
+                np.allclose(np_scores, torch_scores.cpu().numpy(), atol=1e-4, rtol=1e-4),
+                f'Failed case: "{name}"')
+
+    def test_decode_visibility_torch(self):
+        cfg = dict(
+            type='SimCCLabel',
+            input_size=(192, 256),
+            smoothing_type='gaussian',
+            sigma=6.0,
+            simcc_split_ratio=2.0,
+            decode_visibility=True)
+
+        codec = KEYPOINT_CODECS.build(cfg)
+        rng = np.random.default_rng(123)
+        simcc_x = rng.random((1, 17, int(192 * codec.simcc_split_ratio)), dtype=np.float32)
+        simcc_y = rng.random((1, 17, int(256 * codec.simcc_split_ratio)), dtype=np.float32)
+
+        np_keypoints, (np_scores, np_visibility) = codec.decode(simcc_x.copy(), simcc_y.copy())
+        torch_keypoints, (torch_scores, torch_visibility) = codec.decode(
+            torch.from_numpy(simcc_x.copy()),
+            torch.from_numpy(simcc_y.copy()))
+
+        self.assertTrue(
+            np.allclose(np_keypoints, torch_keypoints.cpu().numpy(), atol=1e-3, rtol=1e-4))
+        self.assertTrue(
+            np.allclose(np_scores, torch_scores.cpu().numpy(), atol=1e-4, rtol=1e-4))
+        self.assertTrue(
+            np.allclose(
+                np_visibility, torch_visibility.cpu().numpy(), atol=1e-4, rtol=1e-4))
 
     def test_cicular_verification(self):
         keypoints = self.data['keypoints']

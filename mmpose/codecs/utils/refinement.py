@@ -2,8 +2,14 @@
 from itertools import product
 
 import numpy as np
+import torch
+import torch.nn.functional as F
 
 from .post_processing import gaussian_blur, gaussian_blur1d
+
+
+def _is_torch_tensor(value) -> bool:
+    return isinstance(value, torch.Tensor)
 
 
 def refine_keypoints(keypoints: np.ndarray,
@@ -165,8 +171,7 @@ def refine_keypoints_dark_udp(keypoints: np.ndarray, heatmaps: np.ndarray,
     return keypoints
 
 
-def refine_simcc_dark(keypoints: np.ndarray, simcc: np.ndarray,
-                      blur_kernel_size: int) -> np.ndarray:
+def refine_simcc_dark(keypoints, simcc, blur_kernel_size: int):
     """SimCC version. Refine keypoint predictions using distribution aware
     coordinate decoding for UDP. See `UDP`_ for details. The operation is in-
     place.
@@ -188,26 +193,58 @@ def refine_simcc_dark(keypoints: np.ndarray, simcc: np.ndarray,
 
     .. _`UDP`: https://arxiv.org/abs/1911.07524
     """
+    torch_input = _is_torch_tensor(simcc) or _is_torch_tensor(keypoints)
+
+    if torch_input:
+        if not (_is_torch_tensor(simcc) and _is_torch_tensor(keypoints)):
+            raise TypeError('`keypoints` and `simcc` must be both torch tensors')
+
+        orig_dtype = keypoints.dtype
+        compute_dtype = torch.float64 if simcc.dtype == torch.float32 else simcc.dtype
+        simcc_filtered = gaussian_blur1d(simcc.to(compute_dtype), blur_kernel_size)
+        simcc_filtered = torch.clamp(simcc_filtered, 1e-3, 50.)
+        simcc_filtered = torch.log(simcc_filtered)
+        simcc_filtered = F.pad(simcc_filtered, (2, 2), mode='replicate')
+
+        keypoints_out = keypoints.clone().to(compute_dtype)
+        N = simcc_filtered.shape[0]
+        eps = simcc_filtered.new_tensor(1e-9)
+
+        for n in range(N):
+            px = (keypoints_out[n] + 2.5).to(torch.int64).unsqueeze(-1)
+            dx0 = torch.gather(simcc_filtered[n], 1, px)
+            dx1 = torch.gather(simcc_filtered[n], 1, px + 1)
+            dxm1 = torch.gather(simcc_filtered[n], 1, px - 1)
+            dx2 = torch.gather(simcc_filtered[n], 1, px + 2)
+            dxm2 = torch.gather(simcc_filtered[n], 1, px - 2)
+
+            dx = 0.5 * (dx1 - dxm1)
+            dxx = 0.25 * (dx2 - 2 * dx0 + dxm2) + eps
+            offset = dx / dxx
+            keypoints_out[n] = keypoints_out[n] - offset.squeeze(-1)
+
+        return keypoints_out.to(orig_dtype)
+
+    keypoints = np.asarray(keypoints)
+    simcc = np.asarray(simcc)
     N = simcc.shape[0]
 
-    # modulate simcc
     simcc = gaussian_blur1d(simcc, blur_kernel_size)
-    np.clip(simcc, 1e-3, 50., simcc)
-    np.log(simcc, simcc)
-
+    np.clip(simcc, 1e-3, 50., out=simcc)
+    np.log(simcc, out=simcc)
     simcc = np.pad(simcc, ((0, 0), (0, 0), (2, 2)), 'edge')
 
     for n in range(N):
-        px = (keypoints[n] + 2.5).astype(np.int64).reshape(-1, 1)  # K, 1
+        px = (keypoints[n] + 2.5).astype(np.int64).reshape(-1, 1)
 
-        dx0 = np.take_along_axis(simcc[n], px, axis=1)  # K, 1
+        dx0 = np.take_along_axis(simcc[n], px, axis=1)
         dx1 = np.take_along_axis(simcc[n], px + 1, axis=1)
-        dx_1 = np.take_along_axis(simcc[n], px - 1, axis=1)
+        dxm1 = np.take_along_axis(simcc[n], px - 1, axis=1)
         dx2 = np.take_along_axis(simcc[n], px + 2, axis=1)
-        dx_2 = np.take_along_axis(simcc[n], px - 2, axis=1)
+        dxm2 = np.take_along_axis(simcc[n], px - 2, axis=1)
 
-        dx = 0.5 * (dx1 - dx_1)
-        dxx = 1e-9 + 0.25 * (dx2 - 2 * dx0 + dx_2)
+        dx = 0.5 * (dx1 - dxm1)
+        dxx = 0.25 * (dx2 - 2 * dx0 + dxm2) + 1e-9
 
         offset = dx / dxx
         keypoints[n] -= offset.reshape(-1)

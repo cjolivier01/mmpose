@@ -8,9 +8,12 @@ from mmengine.utils import is_seq_of
 from torch import Tensor
 
 
-def to_numpy(x: Union[Tensor, Sequence[Tensor]],
-             return_device: bool = False,
-             unzip: bool = False) -> Union[np.ndarray, tuple]:
+def to_numpy(
+    x: Union[Tensor, Sequence[Tensor]],
+    return_device: bool = False,
+    unzip: bool = False,
+    keep_as_torch_tensor: bool = True,
+) -> Union[np.ndarray, tuple]:
     """Convert torch tensor to numpy.ndarray.
 
     Args:
@@ -27,18 +30,27 @@ def to_numpy(x: Union[Tensor, Sequence[Tensor]],
     """
 
     if isinstance(x, Tensor):
-        arrays = x.detach().cpu().numpy()
+        # arrays = x.detach().cpu().numpy()
+        arrays = x.detach()
         device = x.device
     elif isinstance(x, np.ndarray) or is_seq_of(x, np.ndarray):
         arrays = x
         device = 'cpu'
     elif is_seq_of(x, Tensor):
         if unzip:
-            # convert (A, B) -> [(A[0], B[0]), (A[1], B[1]), ...]
-            arrays = [
-                tuple(to_numpy(_x[None, :]) for _x in _each)
-                for _each in zip(*x)
-            ]
+            if keep_as_torch_tensor:
+                arrays = [
+                    tuple(
+                        to_numpy(_x[None, :], keep_as_torch_tensor=keep_as_torch_tensor)
+                        for _x in _each
+                    )
+                    for _each in zip(*x)
+                ]
+            else:
+                # convert (A, B) -> [(A[0], B[0]), (A[1], B[1]), ...]
+                arrays = [
+                    tuple(to_numpy(_x[None, :]) for _x in _each) for _each in zip(*x)
+                ]
         else:
             arrays = [to_numpy(_x) for _x in x]
 

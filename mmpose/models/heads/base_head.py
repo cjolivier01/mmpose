@@ -7,8 +7,13 @@ from mmengine.structures import InstanceData
 from torch import Tensor
 
 from mmpose.utils.tensor_utils import to_numpy
-from mmpose.utils.typing import (Features, InstanceList, OptConfigType,
-                                 OptSampleList, Predictions)
+from mmpose.utils.typing import (
+    Features,
+    InstanceList,
+    OptConfigType,
+    OptSampleList,
+    Predictions,
+)
 
 
 class BaseHead(BaseModule, metaclass=ABCMeta):
@@ -70,11 +75,12 @@ class BaseHead(BaseModule, metaclass=ABCMeta):
                 batch_visibility = [None] * len(batch_keypoints)
 
         else:
-            batch_output_np = to_numpy(batch_outputs, unzip=True)
+            batch_output_data = to_numpy(
+                batch_outputs, unzip=True, keep_as_torch_tensor=True)
             batch_keypoints = []
             batch_scores = []
             batch_visibility = []
-            for outputs in batch_output_np:
+            for outputs in batch_output_data:
                 keypoints, scores = _pack_and_call(outputs,
                                                    self.decoder.decode)
                 batch_keypoints.append(keypoints)

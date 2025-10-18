@@ -3,11 +3,17 @@ from itertools import product
 from typing import Optional, Tuple, Union
 
 import numpy as np
+import torch
+from torch import Tensor
 
 from mmpose.codecs.utils import get_simcc_maximum
 from mmpose.codecs.utils.refinement import refine_simcc_dark
 from mmpose.registry import KEYPOINT_CODECS
 from .base import BaseKeypointCodec
+
+
+def _is_torch_tensor(value) -> bool:
+    return isinstance(value, Tensor)
 
 
 @KEYPOINT_CODECS.register_module()
@@ -153,8 +159,9 @@ class SimCCLabel(BaseKeypointCodec):
 
         return encoded
 
-    def decode(self, simcc_x: np.ndarray,
-               simcc_y: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def decode(self, simcc_x: Union[np.ndarray, Tensor],
+               simcc_y: Union[np.ndarray, Tensor]
+               ) -> Tuple[Union[np.ndarray, Tensor], Union[np.ndarray, Tensor]]:
         """Decode keypoint coordinates from SimCC representations. The decoded
         coordinates are in the input image space.
 
@@ -171,30 +178,54 @@ class SimCCLabel(BaseKeypointCodec):
                 It usually represents the confidence of the keypoint prediction
         """
 
+        torch_input = _is_torch_tensor(simcc_x) or _is_torch_tensor(simcc_y)
+        if torch_input and (not _is_torch_tensor(simcc_x)
+                            or not _is_torch_tensor(simcc_y)):
+            raise TypeError('`simcc_x` and `simcc_y` must be both torch tensors')
+
         keypoints, scores = get_simcc_maximum(simcc_x, simcc_y)
 
         # Unsqueeze the instance dimension for single-instance results
         if keypoints.ndim == 2:
-            keypoints = keypoints[None, :]
-            scores = scores[None, :]
+            if torch_input:
+                keypoints = keypoints.unsqueeze(0)
+                scores = scores.unsqueeze(0)
+            else:
+                keypoints = keypoints[None, :]
+                scores = scores[None, :]
 
         if self.use_dark:
-            x_blur = int((self.sigma[0] * 20 - 7) // 3)
-            y_blur = int((self.sigma[1] * 20 - 7) // 3)
+            if torch_input:
+                sigma = torch.as_tensor(
+                    self.sigma, dtype=keypoints.dtype, device=keypoints.device)
+                keypoints = keypoints.clone()
+            else:
+                sigma = self.sigma
+            x_blur = int((sigma[0] * 20 - 7) // 3)
+            y_blur = int((sigma[1] * 20 - 7) // 3)
             x_blur -= int((x_blur % 2) == 0)
             y_blur -= int((y_blur % 2) == 0)
-            keypoints[:, :, 0] = refine_simcc_dark(keypoints[:, :, 0], simcc_x,
-                                                   x_blur)
-            keypoints[:, :, 1] = refine_simcc_dark(keypoints[:, :, 1], simcc_y,
-                                                   y_blur)
+            keypoints[..., 0] = refine_simcc_dark(keypoints[..., 0], simcc_x,
+                                                  x_blur)
+            keypoints[..., 1] = refine_simcc_dark(keypoints[..., 1], simcc_y,
+                                                  y_blur)
 
-        keypoints /= self.simcc_split_ratio
+        if torch_input:
+            keypoints = keypoints / keypoints.new_tensor(self.simcc_split_ratio)
+        else:
+            keypoints = keypoints / self.simcc_split_ratio
 
         if self.decode_visibility:
+            beta_x = self.decode_beta * float(self.sigma[0])
+            beta_y = self.decode_beta * float(self.sigma[1])
+            if torch_input:
+                scale_x = simcc_x * simcc_x.new_tensor(beta_x)
+                scale_y = simcc_y * simcc_y.new_tensor(beta_y)
+            else:
+                scale_x = simcc_x * beta_x
+                scale_y = simcc_y * beta_y
             _, visibility = get_simcc_maximum(
-                simcc_x * self.decode_beta * self.sigma[0],
-                simcc_y * self.decode_beta * self.sigma[1],
-                apply_softmax=True)
+                scale_x, scale_y, apply_softmax=True)
             return keypoints, (scores, visibility)
         else:
             return keypoints, scores
