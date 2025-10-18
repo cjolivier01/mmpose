@@ -279,7 +279,10 @@ class PoseLocalVisualizer(OpencvBackendVisualizer):
                 keypoints_visible = np.ones(keypoints.shape[:-1])
 
             for kpts, visible in zip(keypoints, keypoints_visible):
-                kpts = np.array(kpts, copy=False)
+                if isinstance(kpts, torch.Tensor):
+                    kpts = kpts.cpu().numpy()
+                else:
+                    kpts = np.array(kpts, copy=False)
 
                 if self.kpt_color is None or isinstance(self.kpt_color, str):
                     kpt_color = [self.kpt_color] * len(kpts)
