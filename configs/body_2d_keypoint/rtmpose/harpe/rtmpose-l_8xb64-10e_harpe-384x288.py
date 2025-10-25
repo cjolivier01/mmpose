@@ -78,7 +78,7 @@ load_from = 'https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/rtmpose
 # base dataset settings
 dataset_type = 'HarpeDataset'
 data_mode = 'topdown'
-data_root = '/mnt/ripper-data2/datasets/VIP-HARPET/'
+data_root = "/mnt/ripper-data/datasets/VIP-HARPET/"
 
 backend_args = dict(backend='local')
 
