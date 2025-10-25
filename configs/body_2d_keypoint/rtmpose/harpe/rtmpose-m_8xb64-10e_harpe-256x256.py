@@ -2,7 +2,7 @@ _base_ = ['../../../_base_/default_runtime.py']
 
 # runtime
 max_epochs = 100
-base_lr = 2e-3
+base_lr = 4e-3
 
 train_cfg = dict(max_epochs=max_epochs, val_interval=1)
 randomness = dict(seed=21)
@@ -23,18 +23,18 @@ param_scheduler = [
 ]
 
 # automatically scaling LR based on the actual training batch size
-auto_scale_lr = dict(base_batch_size=256)
+auto_scale_lr = dict(base_batch_size=1024)
 
-# codec settings
+# codec settings (match MPII 256x256 recipe)
 codec = dict(
     type='SimCCLabel',
-    input_size=(288, 384),
-    sigma=(6., 6.93),
+    input_size=(256, 256),
+    sigma=(5.66, 5.66),
     simcc_split_ratio=2.0,
     normalize=False,
     use_dark=False)
 
-# model settings
+# model settings (RTMPose-M)
 model = dict(
     type='TopdownPoseEstimator',
     data_preprocessor=dict(
@@ -45,11 +45,11 @@ model = dict(
     backbone=dict(
         _scope_='mmdet',
         type='CSPNeXt', arch='P5', expand_ratio=0.5,
-        deepen_factor=1., widen_factor=1., out_indices=(4,),
+        deepen_factor=0.67, widen_factor=0.75, out_indices=(4,),
         channel_attention=True, norm_cfg=dict(type='SyncBN'), act_cfg=dict(type='SiLU')),
     head=dict(
         type='RTMCCHead',
-        in_channels=1024,
+        in_channels=768,
         out_channels=18,  # HARPE has 18 joints
         input_size=codec['input_size'],
         in_featuremap_size=tuple([s // 32 for s in codec['input_size']]),
@@ -72,8 +72,8 @@ model = dict(
         decoder=codec),
     test_cfg=dict(flip_test=True, ))
 
-# initialize from full RTMPose-L SimCC pretrained checkpoint
-load_from = 'https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/rtmpose-l_simcc-aic-coco_pt-aic-coco_420e-384x288-97d6cb0f_20230228.pth'
+# initialize from RTMPose-M SimCC pretrained checkpoint on MPII
+load_from = 'https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/rtmpose-m_simcc-mpii_pt-aic-coco_210e-256x256-ec4dbec8_20230206.pth'
 
 # base dataset settings
 dataset_type = 'HarpeDataset'
@@ -147,3 +147,4 @@ val_evaluator = [
     dict(type='EPE'),
 ]
 test_evaluator = val_evaluator
+
