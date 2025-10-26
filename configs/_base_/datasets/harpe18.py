@@ -44,7 +44,7 @@ dataset_info = dict(
         12: dict(link=("j14", "j15"), id=12, color=[0, 255, 0]),
         13: dict(link=("j15", "j16"), id=13, color=[0, 255, 0]),
         # The stick
-        # 14: dict(link=("j15", "j16"), id=14, color=[0, 255, 255]),
+        14: dict(link=("j16", "j17"), id=14, color=[128, 0, 128]),
     },
     joint_weights=[1.0] * 18,
     sigmas=[0.025] * 18,
