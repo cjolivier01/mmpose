@@ -23,15 +23,16 @@ version_file = 'mmpose/version.py'
 
 
 def get_version():
-    with open(version_file, 'r') as f:
-        exec(compile(f.read(), version_file, 'exec'))
+    version_ns = {}
+    with open(version_file, encoding='utf-8') as f:
+        exec(compile(f.read(), version_file, 'exec'), version_ns)
     import sys
 
     # return short version for sdist
     if 'sdist' in sys.argv or 'bdist_wheel' in sys.argv:
-        return locals()['short_version']
+        return version_ns['short_version']
     else:
-        return locals()['__version__']
+        return version_ns['__version__']
 
 
 def parse_requirements(fname='requirements.txt', with_version=True):
