@@ -1,8 +1,8 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from typing import Optional
 
-import torch
 import numpy as np
+import torch
 from mmcv.transforms import LoadImageFromFile
 
 from mmpose.registry import TRANSFORMS
@@ -10,7 +10,11 @@ from mmpose.registry import TRANSFORMS
 
 @TRANSFORMS.register_module()
 class LoadImage(LoadImageFromFile):
-    """Load an image from file or from the np.ndarray in ``results['img']``.
+    """Load an image from file or from ``results['img']``.
+
+    Supports both NumPy arrays and PyTorch tensors for ``results['img']``.
+    When a tensor is provided, it is left on its current device (including
+    CUDA) and never converted to NumPy or moved to CPU.
 
     Required Keys:
 
@@ -26,7 +30,8 @@ class LoadImage(LoadImageFromFile):
 
     Args:
         to_float32 (bool): Whether to convert the loaded image to a float32
-            numpy array. If set to False, the loaded image is an uint8 array.
+            array. For NumPy inputs this uses ``astype(np.float32)``; for
+            tensors it uses ``to(torch.float32)`` on the existing device.
             Defaults to False.
         color_type (str): The flag argument for :func:``mmcv.imfrombytes``.
             Defaults to 'color'.
@@ -50,23 +55,33 @@ class LoadImage(LoadImageFromFile):
             dict: The result dict.
         """
         try:
-            if 'img' not in results:
+            if "img" not in results:
                 # Load image from file by :meth:`LoadImageFromFile.transform`
                 results = super().transform(results)
+                img = results["img"]
             else:
-                img = results['img']
-                assert isinstance(img, np.ndarray | torch.Tensor)
+                img = results["img"]
+                assert isinstance(img, (np.ndarray, torch.Tensor))
                 if self.to_float32:
-                    img = img.astype(np.float32)
+                    if isinstance(img, torch.Tensor):
+                        if not torch.is_floating_point(img):
+                            img = img.to(torch.float32)
+                    else:
+                        img = img.astype(np.float32)
 
-                if 'img_path' not in results:
-                    results['img_path'] = None
-                results['img_shape'] = img.shape[:2]
-                results['ori_shape'] = img.shape[:2]
+            # Ensure updated image is stored back
+            results["img"] = img
+
+            if "img_path" not in results:
+                results["img_path"] = None
+            # img.shape is valid for both NumPy arrays and tensors
+            results["img_shape"] = img.shape[:2]
+            results["ori_shape"] = img.shape[:2]
         except Exception as e:
             e = type(e)(
-                f'`{str(e)}` occurs when loading `{results["img_path"]}`.'
-                'Please check whether the file exists.')
+                f'`{str(e)}` occurs when loading `{results.get("img_path")}`.'
+                "Please check whether the file exists."
+            )
             raise e
 
         return results
